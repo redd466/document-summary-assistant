@@ -1,8 +1,9 @@
 import streamlit as st
 import pdfplumber
-import pytesseract
 from PIL import Image
+import pytesseract
 from transformers import pipeline
+
 
 # Page setup
 st.set_page_config(page_title="Document Summary Assistant", layout="centered")
@@ -56,3 +57,4 @@ if uploaded_file is not None:
 
 else:
     st.info("👆 Please upload a PDF or image to get started.")
+
