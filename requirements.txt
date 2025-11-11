@@ -1,0 +1,7 @@
+streamlit
+pdfplumber
+pytesseract
+Pillow
+transformers
+torch
+protobuf==3.20.*
