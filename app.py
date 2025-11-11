@@ -1,16 +1,18 @@
 import streamlit as st
 import pdfplumber
-import pytesseract
 from PIL import Image
+import pytesseract
 from transformers import pipeline
 
+# Page configuration
 st.set_page_config(page_title="Document Summary Assistant", layout="centered")
 st.title("📄 Document Summary Assistant")
-st.write("Upload a **PDF** or **Image** file to generate a smart summary.")
+st.write("Upload a **PDF** or **Image** file to extract text and generate a smart summary.")
 
-# Upload section
+# File uploader
 uploaded_file = st.file_uploader("Choose a file", type=["pdf", "png", "jpg", "jpeg"])
 
+# Function to extract text from PDF
 def extract_text_from_pdf(file):
     text = ""
     with pdfplumber.open(file) as pdf:
@@ -20,46 +22,58 @@ def extract_text_from_pdf(file):
                 text += content + "\n"
     return text
 
+# Function to extract text from Image
 def extract_text_from_image(file):
     image = Image.open(file)
     text = pytesseract.image_to_string(image)
     return text
 
+# Summarization model (smaller for faster load)
 @st.cache_resource
 def load_summarizer():
-    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+    return pipeline("summarization", model="sshleifer/distilbart-cnn-6-6")
 
-summarizer = load_summarizer()
+# Main logic
+if uploaded_file is not None:
+    if uploaded_file.name.endswith(".pdf"):
+        text = extract_text_from_pdf(uploaded_file)
+    else:
+        text = extract_text_from_image(uploaded_file)
 
-def summarize_text(text, ratio=0.3):
-    try:
-        # calculate summary length dynamically
-        max_len = int(len(text.split()) * ratio)
-        max_len = max(60, min(max_len, 500))  # limit the length between 60 and 500 words
-        result = summarizer(text, max_length=max_len, min_length=30, do_sample=False)
-        return result[0]['summary_text']
-    except Exception as e:
-        return f"Could not generate summary: {e}"
+    if text.strip() == "":
+        st.warning("No text could be extracted from this file.")
+    else:
+        st.subheader("Extracted Text")
+        st.text_area(
+            "Extracted Text",
+            text[:1500] + ("..." if len(text) > 1500 else ""),
+            height=200,
+            label_visibility="collapsed"
+        )
 
+        choice = st.radio(
+            "Select summary length",
+            ["Short", "Medium", "Long"],
+            label_visibility="collapsed"
+        )
 
-if uploaded_file:
-    file_type = uploaded_file.name.split(".")[-1].lower()
+        if st.button("Generate Summary"):
+            summarizer = load_summarizer()
 
-    with st.spinner("Extracting text..."):
-        if file_type == "pdf":
-            text = extract_text_from_pdf(uploaded_file)
-        else:
-            text = extract_text_from_image(uploaded_file)
+            if choice == "Short":
+                max_len, min_len = 60, 20
+            elif choice == "Medium":
+                max_len, min_len = 120, 40
+            else:
+                max_len, min_len = 200, 80
 
-    st.subheader("Extracted Text:")
-    st.text_area("", text[:1500] + ("..." if len(text) > 1500 else ""), height=200)
+            with st.spinner("Summarizing... please wait ⏳"):
+                summary = summarizer(
+                    text, max_length=max_len, min_length=min_len, do_sample=False
+                )[0]["summary_text"]
 
-    st.subheader("Choose Summary Length:")
-    choice = st.radio("", ["Short", "Medium", "Long"])
-
-    if st.button("Generate Summary"):
-        with st.spinner("Summarizing..."):
-            ratio = 0.2 if choice == "Short" else 0.3 if choice == "Medium" else 0.5
-            summary = summarize_text(text, ratio)
-        st.success("✅ Summary Generated Successfully!")
-        st.text_area("📋 Summary:", summary, height=250)
+            st.success("Summary generated successfully!")
+            st.subheader("📘 Summary:")
+            st.write(summary)
+else:
+    st.info("Please upload a file to begin.")
