@@ -1,79 +1,58 @@
 import streamlit as st
 import pdfplumber
-from PIL import Image
 import pytesseract
+from PIL import Image
 from transformers import pipeline
 
-# Page configuration
+# Page setup
 st.set_page_config(page_title="Document Summary Assistant", layout="centered")
 st.title("📄 Document Summary Assistant")
-st.write("Upload a **PDF** or **Image** file to extract text and generate a smart summary.")
+st.write("Upload a **PDF or Image**, and get a smart summary automatically!")
 
 # File uploader
-uploaded_file = st.file_uploader("Choose a file", type=["pdf", "png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Upload your document (PDF or Image)", type=["pdf", "png", "jpg", "jpeg"])
 
-# Function to extract text from PDF
-def extract_text_from_pdf(file):
-    text = ""
-    with pdfplumber.open(file) as pdf:
-        for page in pdf.pages:
-            content = page.extract_text()
-            if content:
-                text += content + "\n"
-    return text
+text = ""
 
-# Function to extract text from Image
-def extract_text_from_image(file):
-    image = Image.open(file)
-    text = pytesseract.image_to_string(image)
-    return text
-
-# Summarization model (smaller for faster load)
-@st.cache_resource
-def load_summarizer():
-    return pipeline("summarization", model="sshleifer/distilbart-cnn-6-6")
-
-# Main logic
+# Extract text from uploaded file
 if uploaded_file is not None:
-    if uploaded_file.name.endswith(".pdf"):
-        text = extract_text_from_pdf(uploaded_file)
-    else:
-        text = extract_text_from_image(uploaded_file)
+    file_type = uploaded_file.name.split(".")[-1].lower()
 
-    if text.strip() == "":
-        st.warning("No text could be extracted from this file.")
-    else:
-        st.subheader("Extracted Text")
-        st.text_area(
-            "Extracted Text",
-            text[:1500] + ("..." if len(text) > 1500 else ""),
-            height=200,
-            label_visibility="collapsed"
-        )
+    if file_type == "pdf":
+        with pdfplumber.open(uploaded_file) as pdf:
+            for page in pdf.pages:
+                text += page.extract_text() or ""
 
-        choice = st.radio(
-            "Select summary length",
-            ["Short", "Medium", "Long"],
-            label_visibility="collapsed"
-        )
+    elif file_type in ["png", "jpg", "jpeg"]:
+        image = Image.open(uploaded_file)
+        text = pytesseract.image_to_string(image)
+
+    if not text.strip():
+        st.warning("⚠️ No readable text found in the file. Try another document.")
+    else:
+        st.subheader("📘 Extracted Text Preview:")
+        st.text_area("Extracted Text", text[:1500] + ("..." if len(text) > 1500 else ""), height=200, label_visibility="collapsed")
+
+        st.subheader("🧩 Choose Summary Length:")
+        choice = st.radio("Select summary length", ["Short", "Medium", "Long"], label_visibility="collapsed")
 
         if st.button("Generate Summary"):
-            summarizer = load_summarizer()
+            with st.spinner("⏳ Summarizing... Please wait"):
+                summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
 
-            if choice == "Short":
-                max_len, min_len = 60, 20
-            elif choice == "Medium":
-                max_len, min_len = 120, 40
-            else:
-                max_len, min_len = 200, 80
+                max_length = {"Short": 60, "Medium": 120, "Long": 180}[choice]
+                min_length = max_length // 3
 
-            with st.spinner("Summarizing... please wait ⏳"):
-                summary = summarizer(
-                    text, max_length=max_len, min_length=min_len, do_sample=False
-                )[0]["summary_text"]
+                chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
+                summary = ""
 
-            st.success("Summary generated successfully!")
-            st.subheader("📘 Summary:")
-            st.write(summary)
+                for chunk in chunks:
+                    summary_part = summarizer(chunk, max_length=max_length, min_length=min_length, do_sample=False)
+                    summary += summary_part[0]['summary_text'] + " "
+
+            st.success("✅ Summary Generated Successfully!")
+            st.subheader("📝 Smart Summary:")
+            st.write(summary.strip())
+
 else:
-    st.info("Please upload a file to begin.")
+    st.info("👆 Please upload a PDF or image to get started.")
